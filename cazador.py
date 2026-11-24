@@ -529,6 +529,8 @@ def main():
         ok = telegram("✅ <b>Cazador de precios</b>: conexión con Telegram funcionando.")
         sys.exit(0 if ok else 1)
 
+    marca_registro = DATA / "registro_pendiente"
+    marca_registro.unlink(missing_ok=True)
     cfg = yaml.safe_load((BASE / "config.yaml").read_text(encoding="utf-8"))
     historial = cargar_json(HIST_FILE, {})
     enviadas = cargar_json(ALERT_FILE, {})
@@ -570,8 +572,19 @@ def main():
     stats["ultima"] = ahora().isoformat()
     stats["estado_tiendas"] = estado
 
-    if args.modo in ("diagnostico", "resumen"):
-        titulo = "🩺 <b>Diagnóstico</b>" if args.modo == "diagnostico" else "☀️ <b>Resumen diario</b>"
+    # El resumen diario lo decide el programa (primera ejecución desde las 8 a.m.),
+    # para no depender de que GitHub acierte una hora exacta del horario programado.
+    modo = args.modo
+    hoy = ahora().astimezone(TZ_BOG)
+    if modo == "normal" and hoy.hour >= 8 and stats.get("ultimo_resumen") != hoy.date().isoformat():
+        modo = "resumen"
+    if modo == "resumen":
+        stats["ultimo_resumen"] = hoy.date().isoformat()
+        DATA.mkdir(parents=True, exist_ok=True)
+        marca_registro.write_text("1", encoding="utf-8")   # el workflow guarda un registro diario en el repo
+
+    if modo in ("diagnostico", "resumen"):
+        titulo = "🩺 <b>Diagnóstico</b>" if modo == "diagnostico" else "☀️ <b>Resumen diario</b>"
         filas = []
         for nom, e in estado.items():
             icono = "❌" if e["ok"] == 0 else ("⚠️" if e["ofertas"] == 0 else "✅")
