@@ -2,8 +2,9 @@ name: Cazador de precios
 
 on:
   schedule:
-    - cron: "*/15 * * * *"   # cada 15 minutos (GitHub puede retrasarlo unos minutos en horas pico)
-    - cron: "7 13 * * *"     # 8:07 a.m. hora Colombia: resumen diario
+    # cada 15 minutos, fuera de la hora en punto (la más congestionada en GitHub).
+    # El resumen diario de las 8 a.m. lo decide el propio programa.
+    - cron: "7,22,37,52 * * * *"
   workflow_dispatch:
     inputs:
       modo:
@@ -53,7 +54,7 @@ jobs:
           ML_CLIENT_SECRET: ${{ secrets.ML_CLIENT_SECRET }}
           ML_REDIRECT_URI: ${{ secrets.ML_REDIRECT_URI }}
           CODIGO: ${{ github.event.inputs.codigo }}
-          MODO: ${{ github.event.inputs.modo || (github.event.schedule == '7 13 * * *' && 'resumen') || 'normal' }}
+          MODO: ${{ github.event.inputs.modo || 'normal' }}
         run: |
           if [ -n "$CODIGO" ]; then echo "::add-mask::$CODIGO"; fi
           python cazador.py --modo "$MODO" --codigo "$CODIGO"
@@ -68,8 +69,8 @@ jobs:
       # Una vez al día guarda un pequeño registro en el repo: mantiene la tarea activa
       # (GitHub pausa tareas programadas de repos sin actividad en 60 días).
       - name: Registro diario
-        if: github.event.schedule == '7 13 * * *'
         run: |
+          if [ ! -f data/registro_pendiente ]; then exit 0; fi
           mkdir -p registro
           cp data/estadisticas.json registro/estadisticas.json
           git config user.name "cazador-bot"
