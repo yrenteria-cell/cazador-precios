@@ -349,9 +349,18 @@ def excluido(oferta, filtros):
 
 
 def detectar(ofertas, historial, cfg):
+    """Solo acepta descuentos VERIFICADOS de forma independiente a lo que anuncia la tienda:
+    (1) mercado: el mismo producto (EAN/GTIN) cuesta bastante más en otras tiendas, y/o
+    (2) historial: es un nuevo mínimo y está muy por debajo del precio habitual de esa tienda.
+    Un descuento que solo se apoya en el precio "antes" de la tienda se descarta (posible marketing)."""
     u = cfg["umbrales"]
     f = cfg["filtros"]
+    v = cfg.get("verificacion") or {}
     minimo = f.get("precio_referencia_minimo", 0)
+    min_tiendas = v.get("min_tiendas_comparacion", 1)
+    dias_hist = v.get("dias_minimos_historial", 7)
+    margen_inflado = v.get("margen_precio_antes_inflado", 15)
+    ts_ahora = int(ahora().timestamp())
 
     # Índice por EAN para comparar entre tiendas
     por_ean = {}
@@ -362,58 +371,60 @@ def detectar(ofertas, historial, cfg):
             if tienda_prev is None or o["precio"] < tienda_prev:
                 por_ean[o["ean"]][o["tienda"]] = o["precio"]
 
-    hallazgos = []
+    hallazgos, descartados = [], []
     for o in ofertas:
         if excluido(o, f):
             continue
-        senales = []
-        referencias = []
-
-        # 1) Caída frente a su propio historial
-        obs = [x[1] for x in historial.get(o["clave"], {}).get("obs", [])]
-        if len(obs) >= 3:
-            med = statistics.median(obs)
-            caida = (1 - o["precio"] / med) * 100 if med else 0
-            if caida >= u["caida_vs_historial"]:
-                senales.append(f"{caida:.0f}% bajo su mediana histórica ({cop(med)})")
-                referencias.append((med, caida))
-
-        # 2) Brecha frente al mismo producto (EAN) en otras tiendas
-        otras = {t: p for t, p in por_ean.get(o["ean"], {}).items() if t != o["tienda"]}
-        if otras:
-            med_otras = statistics.median(otras.values())
-            brecha = (1 - o["precio"] / med_otras) * 100 if med_otras else 0
-            if brecha >= u["brecha_vs_otras_tiendas"]:
-                detalle = ", ".join(f"{t} {cop(p)}" for t, p in otras.items())
-                senales.append(f"{brecha:.0f}% más barato que en otras tiendas ({detalle})")
-                referencias.append((med_otras, brecha))
-
-        # 3) Descuento anunciado frente a "precio antes" (señal más débil)
         dto_anunciado = (1 - o["precio"] / o["antes"]) * 100 if o["antes"] > 0 else 0
-        if dto_anunciado >= u["descuento_anunciado"]:
-            senales.append(f"{dto_anunciado:.0f}% de descuento anunciado (antes {cop(o['antes'])})")
+        verificaciones = []   # (fuente, precio de referencia, descuento real %, detalle)
 
-        if not senales:
+        # 1) Mercado: mismo producto en otras tiendas
+        otras = {t: p for t, p in por_ean.get(o["ean"], {}).items() if t != o["tienda"]}
+        if len(otras) >= min_tiendas:
+            med_otras = statistics.median(otras.values())
+            dto_m = (1 - o["precio"] / med_otras) * 100 if med_otras else 0
+            if dto_m >= u["brecha_vs_otras_tiendas"]:
+                lista = ", ".join(f"{t} {cop(p)}" for t, p in sorted(otras.items(), key=lambda x: x[1]))
+                verificaciones.append(("mercado", med_otras, dto_m,
+                                       f"{dto_m:.0f}% más barato que en {len(otras)} tienda(s): {lista}"))
+
+        # 2) Historial propio: nuevo mínimo y muy por debajo del precio habitual
+        obs = historial.get(o["clave"], {}).get("obs", [])
+        if len(obs) >= 3 and ts_ahora - obs[0][0] >= dias_hist * 86400:
+            precios = [x[1] for x in obs]
+            med_h, min_h = statistics.median(precios), min(precios)
+            dto_h = (1 - o["precio"] / med_h) * 100 if med_h else 0
+            dias = (ts_ahora - obs[0][0]) // 86400
+            if dto_h >= u["caida_vs_historial"] and o["precio"] < min_h:
+                verificaciones.append(("historial", med_h, dto_h,
+                                       f"{dto_h:.0f}% bajo su precio habitual en esta tienda "
+                                       f"({cop(med_h)}, últimos {dias} días) y nuevo mínimo"))
+
+        if not verificaciones:
+            if dto_anunciado >= u["descuento_anunciado"]:
+                descartados.append(o)   # descuento solo "anunciado": no verificable o falso
             continue
 
-        # Precio de referencia: el mejor dato independiente disponible
-        if referencias:
-            ref, dto_real = max(referencias, key=lambda x: x[1])
-            fuente = "historial/otras tiendas"
-        else:
-            ref, dto_real = o["antes"], dto_anunciado
-            fuente = "solo precio 'antes' de la tienda"
+        # Descuento real conservador: el menor de los descuentos verificados
+        fuente, ref, dto_real, _ = min(verificaciones, key=lambda x: x[2])
         if ref < minimo:
             continue
 
-        # sin referencia independiente nunca se marca como "posible error": el "antes" puede estar inflado
-        nivel = "A" if (dto_real >= u["nivel_A"] and referencias) else "B"
-        confianza = "alta" if len(referencias) >= 2 else ("media" if referencias else "baja")
-        hallazgos.append({**o, "senales": senales, "referencia": ref, "dto_real": dto_real,
-                          "fuente": fuente, "nivel": nivel, "confianza": confianza})
+        # ¿El precio "antes" de la tienda está inflado frente al mercado/historial? (estrategia de marketing)
+        nota_mk = ""
+        if o["antes"] > ref * (1 + margen_inflado / 100) and dto_anunciado > dto_real + 5:
+            nota_mk = (f"La tienda anuncia −{dto_anunciado:.0f}% (antes {cop(o['antes'])}), pero ese 'antes' "
+                       f"está inflado: frente al precio real de referencia el descuento es −{dto_real:.0f}%.")
 
-    hallazgos.sort(key=lambda h: (h["nivel"], {"alta": 0, "media": 1, "baja": 2}[h["confianza"]], -h["dto_real"]))
-    return hallazgos
+        mercado_n = len(otras) if any(x[0] == "mercado" for x in verificaciones) else 0
+        confianza = "alta" if (len(verificaciones) >= 2 or mercado_n >= 2) else "media"
+        nivel = "A" if dto_real >= u["nivel_A"] else "B"
+        hallazgos.append({**o, "verificaciones": [x[3] for x in verificaciones], "referencia": ref,
+                          "dto_real": dto_real, "dto_anunciado": dto_anunciado, "nota_mk": nota_mk,
+                          "nivel": nivel, "confianza": confianza})
+
+    hallazgos.sort(key=lambda h: (h["nivel"], {"alta": 0, "media": 1}[h["confianza"]], -h["dto_real"]))
+    return hallazgos, descartados
 
 
 def actualizar_historial(historial, ofertas):
@@ -447,16 +458,16 @@ def filtrar_repetidas(hallazgos, enviadas, horas):
 
 def formatear(h):
     icono = "🚨" if h["nivel"] == "A" else "🔥"
-    etiqueta = "POSIBLE ERROR DE PRECIO" if h["nivel"] == "A" else "Descuento excepcional"
+    etiqueta = "POSIBLE ERROR DE PRECIO" if h["nivel"] == "A" else "Descuento real verificado"
     lineas = [
         f"{icono} <b>{etiqueta}</b> · confianza {h['confianza']}",
         f"<b>{html.escape(h['nombre'])}</b>",
         f"🏬 {html.escape(h['tienda'])}" + (f" · vende: {html.escape(h['vendedor'])}" if h["vendedor"] else ""),
-        f"💰 <b>{cop(h['precio'])}</b>  (referencia {cop(h['referencia'])} · −{h['dto_real']:.0f}%)",
+        f"💰 <b>{cop(h['precio'])}</b> · precio real de referencia {cop(h['referencia'])} · "
+        f"<b>descuento real −{h['dto_real']:.0f}%</b> (la tienda anuncia −{h['dto_anunciado']:.0f}%)",
         f"📦 Stock: {h['stock']}",
-        "📊 " + "; ".join(html.escape(s) for s in h["senales"]),
-        *(["⚠️ Referencia solo del precio 'antes' de la tienda: compáralo con otras tiendas."]
-          if h["fuente"].startswith("solo") else []),
+        "✅ Verificado: " + "; ".join(html.escape(s) for s in h["verificaciones"]),
+        *([f"⚠️ {html.escape(h['nota_mk'])}"] if h["nota_mk"] else []),
         f"🔗 {html.escape(h['link'])}",
     ]
     return "\n".join(lineas)
@@ -542,8 +553,9 @@ def main():
             unicas[o["clave"]] = o
     ofertas = list(unicas.values())
 
-    hallazgos = detectar(ofertas, historial, cfg)
+    hallazgos, descartados = detectar(ofertas, historial, cfg)
     actualizar_historial(historial, ofertas)
+    # solo se alertan descuentos verificados contra el mercado y/o el historial (ver detectar)
     nuevas = filtrar_repetidas(hallazgos, enviadas, cfg.get("horas_sin_repetir", 24))
 
     if nuevas:
@@ -569,7 +581,8 @@ def main():
             f"{titulo} del Cazador de precios\n\n" + "\n".join(filas) +
             f"\n\nProductos únicos revisados: {len(ofertas)}"
             f"\nProductos en historial: {len(historial)}"
-            f"\nHallazgos en esta ejecución: {len(hallazgos)} (nuevos: {len(nuevas)})"
+            f"\nDescuentos verificados: {len(hallazgos)} · alertados: {len(nuevas)}"
+            f"\nDescartados (descuento solo anunciado, sin respaldo en otras tiendas ni historial): {len(descartados)}"
             f"\nEjecuciones acumuladas: {stats['ejecuciones']} · alertas enviadas: {stats['alertas']}"
             f"\nDuración: {time.time() - inicio:.0f} s"
         )
