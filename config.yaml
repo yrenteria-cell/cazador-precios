@@ -70,5 +70,6 @@ verificacion:
   min_tiendas_comparacion: 1        # tiendas adicionales con el mismo producto (EAN) para comparar precio; 2 = más estricto
   dias_minimos_historial: 7         # días de historial propio antes de aceptar "caída frente a su precio habitual"
   margen_precio_antes_inflado: 15   # % por encima del precio real a partir del cual el "antes" se marca como inflado
+  bajada_minima_lista: 15           # % bajo su mediana de 30 días para aparecer en registro/bajadas.md y en el resumen
 horas_sin_repetir: 24
 pausa_segundos: 0.6
