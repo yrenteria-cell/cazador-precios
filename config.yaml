@@ -7,10 +7,11 @@
 tiendas:
   # --- Cadenas (plataforma VTEX) ---
   - {nombre: Olímpica,     tipo: vtex, dominio: www.olimpica.com,        activa: true}   # comprobada
-  - {nombre: Éxito,        tipo: vtex, dominio: www.exito.com,           activa: true}
+  # Desactivadas: no respondieron desde la nube en el diagnóstico del 23/11/2026 (Éxito, Jumbo, Metro, Mabe, Oster)
+  - {nombre: Éxito,        tipo: vtex, dominio: www.exito.com,           activa: false}
   - {nombre: Carulla,      tipo: vtex, dominio: www.carulla.com,         activa: true}
-  - {nombre: Jumbo,        tipo: vtex, dominio: www.tiendasjumbo.co,     activa: true}
-  - {nombre: Metro,        tipo: vtex, dominio: www.tiendasmetro.co,     activa: true}
+  - {nombre: Jumbo,        tipo: vtex, dominio: www.tiendasjumbo.co,     activa: false}
+  - {nombre: Metro,        tipo: vtex, dominio: www.tiendasmetro.co,     activa: false}
   - {nombre: Panamericana, tipo: vtex, dominio: www.panamericana.com.co, activa: true}
 
   # --- Tiendas directas de marca (plataforma VTEX) ---
@@ -19,14 +20,14 @@ tiendas:
   - {nombre: Whirlpool,  tipo: vtex, dominio: www.whirlpool.com.co,   activa: true}   # comprobada
   - {nombre: Imusa,      tipo: vtex, dominio: www.imusa.com.co,       activa: true}   # comprobada
   - {nombre: Electrolux, tipo: vtex, dominio: www.electrolux.com.co,  activa: true}
-  - {nombre: Mabe,       tipo: vtex, dominio: www.mabe.com.co,        activa: true}
-  - {nombre: Oster,      tipo: vtex, dominio: www.oster.com.co,       activa: true}
+  - {nombre: Mabe,       tipo: vtex, dominio: www.mabe.com.co,        activa: false}
+  - {nombre: Oster,      tipo: vtex, dominio: www.oster.com.co,       activa: false}
 
   # --- Falabella (experimental: el diagnóstico dirá si responde desde la nube) ---
   - nombre: Falabella
     tipo: falabella
     dominio: www.falabella.com.co
-    activa: true
+    activa: false   # no respondió desde la nube (diagnóstico 23/11/2026)
     solo_vendido_por: [falabella]   # vendedores aceptados (vacío = todos). Agrega marcas oficiales si quieres.
 
   # --- Mercado Libre: SOLO tiendas oficiales de marca (requiere credenciales, ver README) ---
@@ -55,7 +56,7 @@ paginas_mercadolibre: 2
 umbrales:
   caida_vs_historial: 40      # X% por debajo de su mediana histórica en la misma tienda
   brecha_vs_otras_tiendas: 45 # X% por debajo del mismo producto (mismo EAN) en otras tiendas
-  descuento_anunciado: 65     # X% frente al precio "antes" que muestra la tienda
+  descuento_anunciado: 65     # descuentos anunciados desde X% sin verificación se cuentan como "descartados" en el diagnóstico
   nivel_A: 60                 # desde este % real (respaldado) se clasifica como posible ERROR (A)
 
 filtros:
@@ -64,5 +65,10 @@ filtros:
                        control remoto, repuesto, adaptador, estuche, lamina, película, pelicula,
                        mouse pad, correa, manilla, sticker, filtro, carcasa, case ]
 
+# Verificación de descuentos reales (nada se alerta sin pasar al menos una de estas pruebas)
+verificacion:
+  min_tiendas_comparacion: 1        # tiendas adicionales con el mismo producto (EAN) para comparar precio; 2 = más estricto
+  dias_minimos_historial: 7         # días de historial propio antes de aceptar "caída frente a su precio habitual"
+  margen_precio_antes_inflado: 15   # % por encima del precio real a partir del cual el "antes" se marca como inflado
 horas_sin_repetir: 24
 pausa_segundos: 0.6
