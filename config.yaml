@@ -1,0 +1,68 @@
+# ============================================================
+#  Configuración del Cazador de Precios
+#  Puedes editar este archivo directamente en GitHub (ícono del lápiz).
+#  "activa: false" desactiva una tienda sin borrarla.
+# ============================================================
+
+tiendas:
+  # --- Cadenas (plataforma VTEX) ---
+  - {nombre: Olímpica,     tipo: vtex, dominio: www.olimpica.com,        activa: true}   # comprobada
+  - {nombre: Éxito,        tipo: vtex, dominio: www.exito.com,           activa: true}
+  - {nombre: Carulla,      tipo: vtex, dominio: www.carulla.com,         activa: true}
+  - {nombre: Jumbo,        tipo: vtex, dominio: www.tiendasjumbo.co,     activa: true}
+  - {nombre: Metro,        tipo: vtex, dominio: www.tiendasmetro.co,     activa: true}
+  - {nombre: Panamericana, tipo: vtex, dominio: www.panamericana.com.co, activa: true}
+
+  # --- Tiendas directas de marca (plataforma VTEX) ---
+  - {nombre: Haceb,      tipo: vtex, dominio: www.haceb.com,          activa: true}   # comprobada
+  - {nombre: Challenger, tipo: vtex, dominio: www.challenger.com.co,  activa: true}   # comprobada
+  - {nombre: Whirlpool,  tipo: vtex, dominio: www.whirlpool.com.co,   activa: true}   # comprobada
+  - {nombre: Imusa,      tipo: vtex, dominio: www.imusa.com.co,       activa: true}   # comprobada
+  - {nombre: Electrolux, tipo: vtex, dominio: www.electrolux.com.co,  activa: true}
+  - {nombre: Mabe,       tipo: vtex, dominio: www.mabe.com.co,        activa: true}
+  - {nombre: Oster,      tipo: vtex, dominio: www.oster.com.co,       activa: true}
+
+  # --- Falabella (experimental: el diagnóstico dirá si responde desde la nube) ---
+  - nombre: Falabella
+    tipo: falabella
+    dominio: www.falabella.com.co
+    activa: true
+    solo_vendido_por: [falabella]   # vendedores aceptados (vacío = todos). Agrega marcas oficiales si quieres.
+
+  # --- Mercado Libre: SOLO tiendas oficiales de marca (requiere credenciales, ver README) ---
+  # Aquí entran Samsung, Huawei, Honor, TCL, Xiaomi, Lenovo, Motorola, LG, etc.
+  - nombre: Mercado Libre (tiendas oficiales)
+    tipo: mercadolibre
+    activa: true
+    marcas: [samsung, huawei, honor, tcl, xiaomi, redmi, poco, lenovo, motorola, lg, hp, asus,
+             acer, apple, sony, jbl, philips, hisense, kalley, oster, electrolux, haceb, nintendo]
+
+# Búsquedas por categoría. Agrega o quita términos libremente.
+categorias:
+  Monitores y portátiles: [monitor, portatil, computador portatil, macbook]
+  Celulares y tablets: [celular, iphone, samsung galaxy, huawei, honor, xiaomi, tablet, ipad, matepad]
+  TV, audio y consolas: [televisor, smart tv, tcl, audifonos, barra de sonido, parlante, consola, playstation, nintendo switch, xbox]
+  Electrodomésticos: [nevera, lavadora, freidora de aire, aspiradora, microondas, estufa, aire acondicionado]
+
+# Páginas de 50 productos por búsqueda (VTEX ordena por descuento y por más vendidos)
+paginas:
+  OrderByBestDiscountDESC: 2
+  OrderByTopSaleDESC: 1
+paginas_falabella: 2
+paginas_mercadolibre: 2
+
+# Umbrales de detección (en %)
+umbrales:
+  caida_vs_historial: 40      # X% por debajo de su mediana histórica en la misma tienda
+  brecha_vs_otras_tiendas: 45 # X% por debajo del mismo producto (mismo EAN) en otras tiendas
+  descuento_anunciado: 65     # X% frente al precio "antes" que muestra la tienda
+  nivel_A: 60                 # desde este % real (respaldado) se clasifica como posible ERROR (A)
+
+filtros:
+  precio_referencia_minimo: 250000   # ignora productos cuyo precio normal sea menor (COP)
+  palabras_excluidas: [funda, forro, protector, vidrio templado, cable, cargador, soporte, base para,
+                       control remoto, repuesto, adaptador, estuche, lamina, película, pelicula,
+                       mouse pad, correa, manilla, sticker, filtro, carcasa, case ]
+
+horas_sin_repetir: 24
+pausa_segundos: 0.6
