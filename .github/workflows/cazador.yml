@@ -66,14 +66,14 @@ jobs:
           path: data
           key: estado-${{ github.run_id }}
 
-      # Una vez al día guarda un pequeño registro en el repo: mantiene la tarea activa
-      # (GitHub pausa tareas programadas de repos sin actividad en 60 días).
-      - name: Registro diario
+      # Cada hora publica en registro/ la lista de bajadas (memoria compartida con las tareas de Claude).
+      # Además mantiene la tarea activa (GitHub pausa tareas programadas de repos sin actividad en 60 días).
+      - name: Publicar memoria de precios
         run: |
           if [ ! -f data/registro_pendiente ]; then exit 0; fi
-          mkdir -p registro
-          cp data/estadisticas.json registro/estadisticas.json
           git config user.name "cazador-bot"
           git config user.email "cazador-bot@users.noreply.github.com"
           git add registro/
-          git diff --cached --quiet || (git commit -m "Registro diario $(date -u +%F)" && git push)
+          git diff --cached --quiet && exit 0
+          git commit -m "Memoria de precios $(date -u +%FT%H:%MZ)"
+          git pull --rebase -q && git push
