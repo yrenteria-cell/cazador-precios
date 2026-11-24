@@ -348,6 +348,20 @@ def excluido(oferta, filtros):
     return any(normalizar(w) in n for w in filtros.get("palabras_excluidas", []))
 
 
+def tokens(nombre):
+    return {t for t in re.findall(r"[a-z0-9]+", normalizar(nombre)) if len(t) >= 2}
+
+
+def mismo_producto(a, b):
+    """Confirma que dos ofertas con el mismo EAN son realmente el mismo producto:
+    comparten el código de modelo (letras+números) o al menos 40% de las palabras."""
+    ta, tb = tokens(a), tokens(b)
+    if not ta or not tb:
+        return False
+    modelos = {t for t in ta & tb if re.search(r"\d", t) and re.search(r"[a-z]", t) and len(t) >= 4}
+    return bool(modelos) or len(ta & tb) / len(ta | tb) >= 0.4
+
+
 def detectar(ofertas, historial, cfg):
     """Solo acepta descuentos VERIFICADOS de forma independiente a lo que anuncia la tienda:
     (1) mercado: el mismo producto (EAN/GTIN) cuesta bastante más en otras tiendas, y/o
@@ -362,14 +376,14 @@ def detectar(ofertas, historial, cfg):
     margen_inflado = v.get("margen_precio_antes_inflado", 15)
     ts_ahora = int(ahora().timestamp())
 
-    # Índice por EAN para comparar entre tiendas
+    # Índice por EAN para comparar entre tiendas: tienda -> (precio, nombre)
     por_ean = {}
     for o in ofertas:
         if len(o["ean"]) >= 8:
             por_ean.setdefault(o["ean"], {})
-            tienda_prev = por_ean[o["ean"]].get(o["tienda"])
-            if tienda_prev is None or o["precio"] < tienda_prev:
-                por_ean[o["ean"]][o["tienda"]] = o["precio"]
+            prev = por_ean[o["ean"]].get(o["tienda"])
+            if prev is None or o["precio"] < prev[0]:
+                por_ean[o["ean"]][o["tienda"]] = (o["precio"], o["nombre"])
 
     hallazgos, descartados = [], []
     for o in ofertas:
@@ -379,7 +393,9 @@ def detectar(ofertas, historial, cfg):
         verificaciones = []   # (fuente, precio de referencia, descuento real %, detalle)
 
         # 1) Mercado: mismo producto en otras tiendas
-        otras = {t: p for t, p in por_ean.get(o["ean"], {}).items() if t != o["tienda"]}
+        # solo cuenta como "el mismo producto" si además el nombre coincide (evita EAN mal cargados)
+        otras = {t: pn[0] for t, pn in por_ean.get(o["ean"], {}).items()
+                 if t != o["tienda"] and mismo_producto(o["nombre"], pn[1])}
         if len(otras) >= min_tiendas:
             med_otras = statistics.median(otras.values())
             dto_m = (1 - o["precio"] / med_otras) * 100 if med_otras else 0
@@ -418,7 +434,9 @@ def detectar(ofertas, historial, cfg):
 
         mercado_n = len(otras) if any(x[0] == "mercado" for x in verificaciones) else 0
         confianza = "alta" if (len(verificaciones) >= 2 or mercado_n >= 2) else "media"
-        nivel = "A" if dto_real >= u["nivel_A"] else "B"
+        # "posible error" (A) exige respaldo fuerte: 2+ tiendas de comparación o mercado + historial
+        respaldo_fuerte = mercado_n >= 2 or len(verificaciones) >= 2
+        nivel = "A" if (dto_real >= u["nivel_A"] and respaldo_fuerte) else "B"
         hallazgos.append({**o, "verificaciones": [x[3] for x in verificaciones], "referencia": ref,
                           "dto_real": dto_real, "dto_anunciado": dto_anunciado, "nota_mk": nota_mk,
                           "nivel": nivel, "confianza": confianza})
@@ -566,6 +584,10 @@ def main():
         pie = ("<i>Verifica en la página antes de pagar. Errores evidentes pueden ser cancelados "
                "por la tienda (criterio SIC); paga con tarjeta de crédito dentro de la tienda oficial.</i>")
         telegram(f"{encabezado}\n\n{cuerpo}\n\n{pie}")
+        for h in nuevas:   # registro auditable en GitHub de cada alerta enviada
+            print(f"[alerta] {h['nivel']} | {h['nombre'][:70]} | {h['tienda']} | {cop(h['precio'])} | "
+                  f"ref {cop(h['referencia'])} | real -{h['dto_real']:.0f}% | anunciado -{h['dto_anunciado']:.0f}% | "
+                  + " ; ".join(h["verificaciones"]))
 
     stats["ejecuciones"] += 1
     stats["alertas"] += len(nuevas)
