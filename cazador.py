@@ -71,9 +71,47 @@ def normalizar(t):
 
 
 # ------------------------------------------------------------------ Telegram
+def credenciales_telegram():
+    # strip() elimina espacios o saltos de línea que se cuelan al pegar en GitHub
+    token = re.sub(r"\s+", "", os.getenv("TELEGRAM_BOT_TOKEN") or "")
+    chat = re.sub(r"\s+", "", os.getenv("TELEGRAM_CHAT_ID") or "")
+    return token, chat
+
+
+def ocultar(texto):
+    """Tapa el token en cualquier mensaje antes de imprimirlo."""
+    token, _ = credenciales_telegram()
+    crudo = os.getenv("TELEGRAM_BOT_TOKEN") or ""
+    texto = str(texto)
+    for t in {token, crudo.strip()}:
+        if t:
+            texto = texto.replace(t, "***")
+    return texto
+
+
+def diagnostico_telegram():
+    """Revisa el formato de las credenciales sin mostrarlas."""
+    crudo = os.getenv("TELEGRAM_BOT_TOKEN") or ""
+    token, chat = credenciales_telegram()
+    partes = token.split(":")
+    print(f"[diag] token: largo={len(token)} (sin limpiar={len(crudo)}), "
+          f"tenía espacios/saltos={crudo != token}, dos_puntos={token.count(':')}, "
+          f"dígitos antes de ':'={len(partes[0]) if partes[0].isdigit() else 'NO SON DÍGITOS'}, "
+          f"caracteres después de ':'={len(partes[1]) if len(partes) > 1 else 0} (lo normal es 35)")
+    print(f"[diag] chat_id: largo={len(chat)}, solo dígitos={chat.lstrip('-').isdigit()}")
+    try:
+        r = requests.get(f"https://api.telegram.org/bot{token}/getMe", timeout=20)
+        j = r.json()
+        if j.get("ok"):
+            print(f"[diag] Telegram reconoce el bot: @{j['result'].get('username')}")
+        else:
+            print(f"[diag] Telegram NO reconoce el token: {j.get('error_code')} {j.get('description')}")
+    except Exception as e:
+        print(f"[diag] no se pudo consultar Telegram: {ocultar(e)}")
+
+
 def telegram(texto):
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
-    chat = os.getenv("TELEGRAM_CHAT_ID")
+    token, chat = credenciales_telegram()
     if not token or not chat:
         print("[telegram] Sin credenciales; mensaje no enviado:\n" + texto)
         return False
@@ -97,10 +135,10 @@ def telegram(texto):
             )
             if r.status_code != 200:
                 ok = False
-                print(f"[telegram] Error {r.status_code}: {r.text[:300]}")
+                print(f"[telegram] Error {r.status_code}: {ocultar(r.text[:300])}")
         except Exception as e:
             ok = False
-            print(f"[telegram] Excepción: {e}")
+            print(f"[telegram] Excepción: {ocultar(e)}")
     return ok
 
 
@@ -476,6 +514,7 @@ def main():
         sys.exit(0)
 
     if args.modo == "prueba":
+        diagnostico_telegram()
         ok = telegram("✅ <b>Cazador de precios</b>: conexión con Telegram funcionando.")
         sys.exit(0 if ok else 1)
 
