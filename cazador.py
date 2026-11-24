@@ -31,8 +31,10 @@ HIST_FILE = DATA / "historial.json"
 ALERT_FILE = DATA / "alertas_enviadas.json"
 STATS_FILE = DATA / "estadisticas.json"
 TZ_BOG = timezone(timedelta(hours=-5))
-MAX_OBS = 20            # observaciones de precio guardadas por producto
-DIAS_PURGA = 30         # olvidar productos no vistos en N días
+MAX_OBS = 150           # observaciones de precio guardadas por producto
+DIAS_MEMORIA = 90       # días de memoria de precios por producto
+DIAS_PURGA = 45         # olvidar productos no vistos en N días
+REGISTRO = BASE / "registro"   # carpeta pública del repo: memoria compartida (bajadas, estadísticas)
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -446,18 +448,78 @@ def detectar(ofertas, historial, cfg):
 
 
 def actualizar_historial(historial, ofertas):
+    """Memoria de precios: guarda cada cambio de precio y al menos un registro por día,
+    durante DIAS_MEMORIA días, para saber cuánto costaba cada producto en el pasado."""
     ts = int(ahora().timestamp())
+    corte = ts - DIAS_MEMORIA * 86400
     for o in ofertas:
-        h = historial.setdefault(o["clave"], {"n": o["nombre"][:80], "obs": []})
+        h = historial.setdefault(o["clave"], {"obs": []})
+        h["n"], h["t"], h["l"] = o["nombre"][:90], o["tienda"], o["link"]
         obs = h["obs"]
-        # registra solo si cambió el precio o pasaron >6 h desde la última observación
-        if not obs or obs[-1][1] != o["precio"] or ts - obs[-1][0] > 6 * 3600:
+        if not obs or obs[-1][1] != o["precio"] or ts - obs[-1][0] > 20 * 3600:
             obs.append([ts, o["precio"]])
-            del obs[:-MAX_OBS]
+        h["obs"] = [x for x in obs if x[0] >= corte][-MAX_OBS:]
         h["u"] = ts
     limite = ts - DIAS_PURGA * 86400
     for k in [k for k, v in historial.items() if v.get("u", 0) < limite]:
         del historial[k]
+
+
+def memoria(entrada, ts):
+    """Resume el pasado de un producto: mínimo y mediana de 30 días y precio de hace ~7 días."""
+    if not entrada:
+        return None
+    obs = [x for x in entrada.get("obs", []) if ts - x[0] <= 30 * 86400]
+    if len(obs) < 2:
+        return None
+    precios = [x[1] for x in obs]
+    dias = (ts - obs[0][0]) // 86400
+    hace7 = None
+    if dias >= 6:
+        hace7 = min(obs, key=lambda x: abs((ts - x[0]) - 7 * 86400))[1]
+    return {"min": min(precios), "med": statistics.median(precios), "hace7": hace7, "dias": dias}
+
+
+def bajadas_vs_historial(ofertas, historial, cfg):
+    """Productos cuyo precio actual está por debajo de su propio promedio de 30 días."""
+    ts = int(ahora().timestamp())
+    umbral = (cfg.get("verificacion") or {}).get("bajada_minima_lista", 15)
+    minimo = cfg["filtros"].get("precio_referencia_minimo", 0)
+    lista = []
+    for o in ofertas:
+        if excluido(o, cfg["filtros"]):
+            continue
+        m = memoria(historial.get(o["clave"]), ts)
+        if not m or m["dias"] < 3 or m["med"] < minimo:
+            continue
+        caida = (1 - o["precio"] / m["med"]) * 100
+        if caida >= umbral:
+            lista.append({**o, "mem": m, "caida": caida})
+    return sorted(lista, key=lambda x: -x["caida"])
+
+
+def escribir_registro(bajadas, stats, momento):
+    """Publica en el repo la memoria compartida que también consultan las tareas de Claude."""
+    REGISTRO.mkdir(parents=True, exist_ok=True)
+    lineas = [
+        "# Bajadas de precio frente a su propio historial",
+        "",
+        f"Actualizado: {momento:%Y-%m-%d %H:%M} (hora Colombia). Productos cuyo precio de hoy está por debajo "
+        "de su precio mediano de los últimos 30 días en la MISMA tienda (memoria del cazador). "
+        "Una bajada aquí no es todavía una alerta: el cazador solo alerta lo que además se verifica.",
+        "",
+        "| Producto | Tienda | Precio hoy | Mediana 30 días | Mínimo 30 días | Hace 7 días | Bajada | Días de memoria | Enlace |",
+        "|---|---|---|---|---|---|---|---|---|",
+    ]
+    for b in bajadas[:80]:
+        m = b["mem"]
+        nombre = b["nombre"].replace("|", "/")[:80]
+        lineas.append(f"| {nombre} | {b['tienda']} | {cop(b['precio'])} | {cop(m['med'])} | {cop(m['min'])} | "
+                      f"{cop(m['hace7']) if m['hace7'] else '—'} | −{b['caida']:.0f}% | {m['dias']} | {b['link']} |")
+    if not bajadas:
+        lineas.append("| (sin bajadas relevantes todavía; la memoria necesita al menos 3 días) | | | | | | | | |")
+    (REGISTRO / "bajadas.md").write_text("\n".join(lineas) + "\n", encoding="utf-8")
+    (REGISTRO / "estadisticas.json").write_text(json.dumps(stats, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
 def filtrar_repetidas(hallazgos, enviadas, horas):
@@ -484,6 +546,10 @@ def formatear(h):
         f"💰 <b>{cop(h['precio'])}</b> · precio real de referencia {cop(h['referencia'])} · "
         f"<b>descuento real −{h['dto_real']:.0f}%</b> (la tienda anuncia −{h['dto_anunciado']:.0f}%)",
         f"📦 Stock: {h['stock']}",
+        *([f"🧠 Memoria ({h['memoria']['dias']} días): mínimo {cop(h['memoria']['min'])} · "
+           f"mediana {cop(h['memoria']['med'])}"
+           + (f" · hace 7 días {cop(h['memoria']['hace7'])}" if h['memoria']['hace7'] else "")]
+          if h.get("memoria") else ["🧠 Memoria: aún sin historial de este producto"]),
         "✅ Verificado: " + "; ".join(html.escape(s) for s in h["verificaciones"]),
         *([f"⚠️ {html.escape(h['nota_mk'])}"] if h["nota_mk"] else []),
         f"🔗 {html.escape(h['link'])}",
@@ -574,6 +640,10 @@ def main():
     ofertas = list(unicas.values())
 
     hallazgos, descartados = detectar(ofertas, historial, cfg)
+    ts_ahora = int(ahora().timestamp())
+    for h in hallazgos:
+        h["memoria"] = memoria(historial.get(h["clave"]), ts_ahora)
+    lista_bajadas = bajadas_vs_historial(ofertas, historial, cfg)   # antes de actualizar: compara con el pasado
     actualizar_historial(historial, ofertas)
     # solo se alertan descuentos verificados contra el mercado y/o el historial (ver detectar)
     nuevas = filtrar_repetidas(hallazgos, enviadas, cfg.get("horas_sin_repetir", 24))
@@ -603,7 +673,14 @@ def main():
     if modo == "resumen":
         stats["ultimo_resumen"] = hoy.date().isoformat()
         DATA.mkdir(parents=True, exist_ok=True)
-        marca_registro.write_text("1", encoding="utf-8")   # el workflow guarda un registro diario en el repo
+
+    # Publica la memoria compartida (bajadas + estadísticas) en el repo una vez por hora
+    clave_hora = hoy.strftime("%Y-%m-%d %H")
+    if modo in ("diagnostico", "resumen") or stats.get("ultima_publicacion") != clave_hora:
+        stats["ultima_publicacion"] = clave_hora
+        escribir_registro(lista_bajadas, stats, hoy)
+        DATA.mkdir(parents=True, exist_ok=True)
+        marca_registro.write_text("1", encoding="utf-8")   # el workflow sube la carpeta registro/ al repo
 
     if modo in ("diagnostico", "resumen"):
         titulo = "🩺 <b>Diagnóstico</b>" if modo == "diagnostico" else "☀️ <b>Resumen diario</b>"
@@ -620,6 +697,11 @@ def main():
             f"\nDescartados (descuento solo anunciado, sin respaldo en otras tiendas ni historial): {len(descartados)}"
             f"\nEjecuciones acumuladas: {stats['ejecuciones']} · alertas enviadas: {stats['alertas']}"
             f"\nDuración: {time.time() - inicio:.0f} s"
+            + ("\n\n📉 <b>Mayores bajadas frente a su propio historial</b> (aún sin verificar en otras tiendas):\n"
+               + "\n".join(f"• {html.escape(b['nombre'][:60])} · {html.escape(b['tienda'])}: {cop(b['precio'])} "
+                           f"(mediana 30 días {cop(b['mem']['med'])}, −{b['caida']:.0f}%)" for b in lista_bajadas[:5])
+               if lista_bajadas else "\n\n📉 Memoria de precios: aún sin bajadas relevantes (se llena con los días).")
+            + "\nLista completa: github.com/yrenteria-cell/cazador-precios/blob/main/registro/bajadas.md"
         )
 
     guardar_json(HIST_FILE, historial)
