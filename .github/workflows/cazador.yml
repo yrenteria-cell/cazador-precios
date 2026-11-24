@@ -1,0 +1,78 @@
+name: Cazador de precios
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # cada 15 minutos (GitHub puede retrasarlo unos minutos en horas pico)
+    - cron: "7 13 * * *"     # 8:07 a.m. hora Colombia: resumen diario
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: "Qué hacer en esta ejecución"
+        type: choice
+        options: [diagnostico, prueba, normal, resumen, ml_inicio]
+        default: diagnostico
+      codigo:
+        description: "Solo para ml_inicio: código de autorización de Mercado Libre (TG-...)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cazador
+  cancel-in-progress: false
+
+jobs:
+  cazar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      # El historial de precios vive en la caché de Actions (no llena el repositorio)
+      - name: Recuperar historial
+        uses: actions/cache/restore@v4
+        with:
+          path: data
+          key: estado-${{ github.run_id }}
+          restore-keys: estado-
+
+      - name: Ejecutar cazador
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ML_CLIENT_ID: ${{ secrets.ML_CLIENT_ID }}
+          ML_CLIENT_SECRET: ${{ secrets.ML_CLIENT_SECRET }}
+          ML_REDIRECT_URI: ${{ secrets.ML_REDIRECT_URI }}
+          CODIGO: ${{ github.event.inputs.codigo }}
+          MODO: ${{ github.event.inputs.modo || (github.event.schedule == '7 13 * * *' && 'resumen') || 'normal' }}
+        run: |
+          if [ -n "$CODIGO" ]; then echo "::add-mask::$CODIGO"; fi
+          python cazador.py --modo "$MODO" --codigo "$CODIGO"
+
+      - name: Guardar historial
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data
+          key: estado-${{ github.run_id }}
+
+      # Una vez al día guarda un pequeño registro en el repo: mantiene la tarea activa
+      # (GitHub pausa tareas programadas de repos sin actividad en 60 días).
+      - name: Registro diario
+        if: github.event.schedule == '7 13 * * *'
+        run: |
+          mkdir -p registro
+          cp data/estadisticas.json registro/estadisticas.json
+          git config user.name "cazador-bot"
+          git config user.email "cazador-bot@users.noreply.github.com"
+          git add registro/
+          git diff --cached --quiet || (git commit -m "Registro diario $(date -u +%F)" && git push)
