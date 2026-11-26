@@ -1,25 +1,25 @@
 {
- "ejecuciones": 9,
- "alertas": 320,
+ "ejecuciones": 10,
+ "alertas": 322,
  "desde": "2026-11-24T03:55:29.210901+00:00",
- "ultima": "2026-11-26T05:32:29.469977+00:00",
+ "ultima": "2026-11-26T15:42:58.861109+00:00",
  "estado_tiendas": {
   "Olímpica": {
-   "ok": 61,
-   "errores": 14,
-   "ofertas": 2464,
+   "ok": 59,
+   "errores": 16,
+   "ofertas": 2377,
    "ultimo_error": "HTTP 400"
   },
   "Carulla": {
-   "ok": 90,
-   "errores": 0,
-   "ofertas": 3855,
-   "ultimo_error": ""
+   "ok": 87,
+   "errores": 2,
+   "ofertas": 3809,
+   "ultimo_error": "HTTP 500"
   },
   "Panamericana": {
    "ok": 56,
    "errores": 14,
-   "ofertas": 1315,
+   "ofertas": 1314,
    "ultimo_error": "HTTP 400"
   },
   "Haceb": {
@@ -31,13 +31,13 @@
   "Challenger": {
    "ok": 47,
    "errores": 14,
-   "ofertas": 286,
+   "ofertas": 292,
    "ultimo_error": "HTTP 400"
   },
   "Whirlpool": {
-   "ok": 49,
-   "errores": 14,
-   "ofertas": 344,
+   "ok": 47,
+   "errores": 15,
+   "ofertas": 258,
    "ultimo_error": "HTTP 400"
   },
   "Imusa": {
@@ -49,7 +49,7 @@
   "Electrolux": {
    "ok": 47,
    "errores": 14,
-   "ofertas": 152,
+   "ofertas": 150,
    "ultimo_error": "HTTP 400"
   },
   "Mercado Libre (tiendas oficiales)": {
@@ -59,6 +59,6 @@
    "ultimo_error": "faltan credenciales ML (ver README)"
   }
  },
- "ultimo_resumen": "2026-11-25",
- "ultima_publicacion": "2026-11-26 00"
+ "ultimo_resumen": "2026-11-26",
+ "ultima_publicacion": "2026-11-26 10"
 }
