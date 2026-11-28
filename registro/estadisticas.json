@@ -1,49 +1,49 @@
 {
- "ejecuciones": 13,
+ "ejecuciones": 14,
  "alertas": 327,
  "desde": "2026-11-24T03:55:29.210901+00:00",
- "ultima": "2026-11-27T18:18:36.948211+00:00",
+ "ultima": "2026-11-28T01:31:58.879649+00:00",
  "estado_tiendas": {
   "Olímpica": {
-   "ok": 61,
-   "errores": 14,
-   "ofertas": 2460,
+   "ok": 59,
+   "errores": 15,
+   "ofertas": 2402,
    "ultimo_error": "HTTP 400"
   },
   "Carulla": {
    "ok": 90,
    "errores": 0,
-   "ofertas": 2972,
+   "ofertas": 3873,
    "ultimo_error": ""
   },
   "Panamericana": {
    "ok": 56,
    "errores": 14,
-   "ofertas": 1309,
+   "ofertas": 1304,
    "ultimo_error": "HTTP 400"
   },
   "Haceb": {
    "ok": 49,
    "errores": 14,
-   "ofertas": 374,
+   "ofertas": 375,
    "ultimo_error": "HTTP 400"
   },
   "Challenger": {
    "ok": 47,
    "errores": 14,
-   "ofertas": 294,
+   "ofertas": 300,
    "ultimo_error": "HTTP 400"
   },
   "Whirlpool": {
    "ok": 49,
    "errores": 14,
-   "ofertas": 338,
+   "ofertas": 335,
    "ultimo_error": "HTTP 400"
   },
   "Imusa": {
    "ok": 46,
    "errores": 14,
-   "ofertas": 136,
+   "ofertas": 138,
    "ultimo_error": "HTTP 400"
   },
   "Electrolux": {
@@ -60,5 +60,5 @@
   }
  },
  "ultimo_resumen": "2026-11-27",
- "ultima_publicacion": "2026-11-27 13"
+ "ultima_publicacion": "2026-11-27 20"
 }
